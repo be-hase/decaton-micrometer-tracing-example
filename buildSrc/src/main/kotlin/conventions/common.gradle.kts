@@ -18,5 +18,7 @@ java {
 val libs = the<org.gradle.accessors.dm.LibrariesForLibs>()
 
 dependencies {
+    implementation(platform(libs.brave.bom))
+    implementation(platform(libs.opentelemetry.bom))
     implementation(platform(libs.spring.boot.bom))
 }

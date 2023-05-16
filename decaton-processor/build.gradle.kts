@@ -8,4 +8,6 @@ dependencies {
 
     implementation(libs.decaton.processor)
     implementation(libs.decaton.brave)
+    implementation("io.micrometer:micrometer-tracing-bridge-brave")
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")
 }

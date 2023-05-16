@@ -1,11 +1,14 @@
 [versions]
 decaton = "6.4.0"
 spring-boot = "3.0.6"
+opentelemetry = "1.26.0"
 
 [libraries]
 brave-bom = { module = "io.zipkin.brave:brave-bom", version = "5.16.0" }
 decaton-brave = { module = "com.linecorp.decaton:decaton-brave", version.ref = "decaton" }
 decaton-processor = { module = "com.linecorp.decaton:decaton-processor", version.ref = "decaton" }
+opentelemetry-bom = { module = "io.opentelemetry:opentelemetry-bom", version.ref = "opentelemetry" }
+opentelemetry-kafka-clients = { module = "io.opentelemetry.instrumentation:opentelemetry-kafka-clients-2.6", version = "1.26.0-alpha" }
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 
 # gradle plugins

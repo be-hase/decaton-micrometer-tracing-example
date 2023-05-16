@@ -16,3 +16,4 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include(":brave-producer")
 include(":decaton-processor")
+include(":otel-producer")
