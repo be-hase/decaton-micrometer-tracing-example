@@ -6,11 +6,14 @@ import com.linecorp.decaton.processor.ProcessingContext;
 import com.linecorp.decaton.processor.TaskMetadata;
 import com.linecorp.decaton.processor.runtime.*;
 import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.brave.bridge.BraveBaggageManager;
+import io.micrometer.tracing.brave.bridge.BraveCurrentTraceContext;
+import io.micrometer.tracing.brave.bridge.BravePropagator;
+import io.micrometer.tracing.brave.bridge.BraveTracer;
 import io.micrometer.tracing.otel.bridge.OtelCurrentTraceContext;
 import io.micrometer.tracing.otel.bridge.OtelPropagator;
 import io.micrometer.tracing.otel.bridge.OtelTracer;
 import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
@@ -26,6 +29,8 @@ import java.util.Properties;
 
 @SpringBootApplication
 public class Application {
+    private static boolean OTEL_MODE = "true".equals(System.getenv("OTEL_MODE"));
+
     public static void main(String[] args) {
         SpringApplication.run(Application.class, args);
     }
@@ -33,7 +38,7 @@ public class Application {
     @Bean
     public brave.Tracing braveTracing() {
         return brave.Tracing.newBuilder()
-                // default is B3Propagation
+                // default is B3Propagation.
                 //.propagationFactory(new W3CPropagation())
                 .build();
     }
@@ -48,7 +53,7 @@ public class Application {
         return OpenTelemetrySdk
                 .builder()
                 .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                .buildAndRegisterGlobal();
+                .build();
     }
 
     @Bean
@@ -56,51 +61,77 @@ public class Application {
         return openTelemetry.getTracerProvider().get("io.micrometer.micrometer-tracing");
     }
 
-    // Using Brave
-//    @Bean
-//    public Tracer micrometerTracer(brave.Tracing tracing) {
-//        return new BraveTracer(tracing.tracer(), new BraveCurrentTraceContext(tracing.currentTraceContext()), new BraveBaggageManager());
-//    }
-
-    // Using OpenTelemetry
     @Bean
-    public Tracer micrometerTracer(io.opentelemetry.api.trace.Tracer tracer) {
-        final var otelCurrentTraceContext = new OtelCurrentTraceContext();
-        return new OtelTracer(
-                tracer,
-                otelCurrentTraceContext,
-                event -> {
-                }
-        );
+    public Tracer micrometerTracer(brave.Tracing braveTracing, io.opentelemetry.api.trace.Tracer tracer) {
+        if (OTEL_MODE) {
+            return new OtelTracer(
+                    tracer,
+                    new OtelCurrentTraceContext(),
+                    event -> {
+                    }
+            );
+        } else {
+            return new BraveTracer(
+                    braveTracing.tracer(),
+                    new BraveCurrentTraceContext(braveTracing.currentTraceContext()),
+                    new BraveBaggageManager()
+            );
+        }
     }
 
     @Bean
     public ProcessorSubscription decatonProcessorSubscription(
             brave.Tracing braveTracing,
             KafkaTracing braveKafkaTracing,
+            OpenTelemetry openTelemetry,
             io.opentelemetry.api.trace.Tracer openTelemetryTracer,
             Tracer micrometerTracer
     ) {
         final var processorsBuilder = ProcessorsBuilder
                 .consuming("decaton-micrometer-tracing-example", new StringTaskExtractor())
-                .thenProcess(new SampleProcessor());
+                .thenProcess(new SampleProcessor(micrometerTracer));
 
         final var consumerConfig = new Properties();
-        consumerConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, System.getenv("KAFKA_BOOTSTRAP_SERVERS"));
-        consumerConfig.put(CommonClientConfigs.GROUP_ID_CONFIG, System.getenv("USER") + "-decaton-micrometer-tracing-example");
+        consumerConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
+                System.getenv("KAFKA_BOOTSTRAP_SERVERS"));
+        consumerConfig.put(CommonClientConfigs.GROUP_ID_CONFIG,
+                System.getenv("USER") + "-decaton-micrometer-tracing-example");
 
-        return SubscriptionBuilder
+        final var subscriptionBuilder = SubscriptionBuilder
                 .newBuilder("decaton-micrometer-tracing-example")
                 .consumerConfig(consumerConfig)
-                .enableTracing(new MicrometerTracingProvider(micrometerTracer, new OtelPropagator(ContextPropagators.create(W3CTraceContextPropagator.getInstance()), openTelemetryTracer)))
-                // .enableTracing(new MicrometerTracingProvider(micrometerTracer, new BravePropagator(braveTracing))
-                //.enableTracing(new BraveTracingProvider(kafkaTracing))
-                .processorsBuilder(processorsBuilder)
-                .buildAndStart();
+                .enableTracing(new MicrometerTracingProvider(
+                        micrometerTracer,
+                        new OtelPropagator(openTelemetry.getPropagators(), openTelemetryTracer)))
+                //.enableTracing(new MicrometerTracingProvider(micrometerTracer, new BravePropagator(braveTracing))
+                .processorsBuilder(processorsBuilder);
+        if (OTEL_MODE) {
+            subscriptionBuilder.enableTracing(
+                    new MicrometerTracingProvider(
+                            micrometerTracer,
+                            new OtelPropagator(openTelemetry.getPropagators(), openTelemetryTracer)
+                    )
+            );
+        } else {
+            subscriptionBuilder.enableTracing(
+                    new MicrometerTracingProvider(
+                            micrometerTracer,
+                            new BravePropagator(braveTracing)
+                    )
+            );
+        }
+
+        return subscriptionBuilder.buildAndStart();
     }
 
-    static class SampleProcessor implements DecatonProcessor<String> {
+    public static class SampleProcessor implements DecatonProcessor<String> {
         private static final Logger log = LoggerFactory.getLogger(SampleProcessor.class);
+
+        private final Tracer micrometerTracer;
+
+        public SampleProcessor(Tracer micrometerTracer) {
+            this.micrometerTracer = micrometerTracer;
+        }
 
         @Override
         public void process(ProcessingContext<String> context, String task) {
@@ -108,11 +139,7 @@ public class Application {
         }
 
         private String currentTraceId() {
-            final var braveContext = brave.Tracing.current().currentTraceContext().get();
-            if (braveContext != null) {
-                return braveContext.traceIdString();
-            }
-            return Span.current().getSpanContext().getTraceId();
+            return micrometerTracer.currentTraceContext().context().traceId();
         }
     }
 

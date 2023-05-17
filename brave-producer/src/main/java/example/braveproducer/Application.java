@@ -46,7 +46,7 @@ public class Application {
     }
 
     @Component
-    static class CronBraveProducer {
+    public static class CronBraveProducer {
         private static final Logger log = LoggerFactory.getLogger(CronBraveProducer.class);
         private final Producer<String, String> producer;
         private final Tracing tracing;
@@ -63,7 +63,7 @@ public class Application {
                 producer.send(
                         new ProducerRecord<>(
                                 "decaton-micrometer-tracing-example",
-                                "from-brave-producer. traceId=" + tracing.currentTraceContext().get().traceIdString()
+                                "from-brave-producer. traceId=" + span.context().traceIdString()
                         ),
                         (r, e) -> {
                             if (e == null) {

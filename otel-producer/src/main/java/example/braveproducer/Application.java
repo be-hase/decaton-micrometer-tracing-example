@@ -1,6 +1,7 @@
 package example.braveproducer;
 
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.instrumentation.kafkaclients.v2_6.KafkaTelemetry;
@@ -37,6 +38,11 @@ public class Application {
     }
 
     @Bean
+    public Tracer tracer(OpenTelemetry openTelemetry) {
+        return openTelemetry.getTracer("kafka");
+    }
+
+    @Bean
     public Producer<String, String> producer(OpenTelemetry openTelemetry) {
         final var producerConfig = new Properties();
         producerConfig.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, System.getenv("KAFKA_BOOTSTRAP_SERVERS"));
@@ -46,19 +52,19 @@ public class Application {
     }
 
     @Component
-    static class CronBraveProducer {
+    public static class CronBraveProducer {
         private static final Logger log = LoggerFactory.getLogger(CronBraveProducer.class);
         private final Producer<String, String> producer;
-        private final OpenTelemetry openTelemetry;
+        private final Tracer tracer;
 
-        CronBraveProducer(Producer<String, String> producer, OpenTelemetry openTelemetry) {
+        CronBraveProducer(Producer<String, String> producer, Tracer tracer) {
             this.producer = producer;
-            this.openTelemetry = openTelemetry;
+            this.tracer = tracer;
         }
 
         @Scheduled(fixedRate = 5000)
         public void runProduce() {
-            final var span = openTelemetry.getTracer("kafka").spanBuilder("cron").startSpan();
+            final var span = tracer.spanBuilder("cron").startSpan();
             try (final var scope = span.makeCurrent()) {
                 producer.send(
                         new ProducerRecord<>(

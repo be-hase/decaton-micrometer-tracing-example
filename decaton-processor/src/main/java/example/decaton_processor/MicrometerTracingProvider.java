@@ -1,7 +1,7 @@
 package example.decaton_processor;
 
-import brave.internal.Nullable;
 import com.linecorp.decaton.processor.tracing.TracingProvider;
+import io.micrometer.common.lang.Nullable;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -23,7 +23,8 @@ public class MicrometerTracingProvider implements TracingProvider {
     public MicrometerRecordTraceHandle traceFor(ConsumerRecord<?, ?> record, String subscriptionId) {
         return new MicrometerRecordTraceHandle(
                 tracer,
-                propagator.extract(record.headers(), GETTER).name("decaton").tag("subscriptionId", subscriptionId).start()
+                propagator.extract(record.headers(), GETTER)
+                        .name("decaton").tag("subscriptionId", subscriptionId).start()
         );
     }
 
@@ -34,9 +35,11 @@ public class MicrometerTracingProvider implements TracingProvider {
         }
 
         @Nullable
-        static String lastStringHeader(Headers headers, String key) {
-            Header header = headers.lastHeader(key);
-            if (header == null || header.value() == null) return null;
+        private String lastStringHeader(Headers headers, String key) {
+            final Header header = headers.lastHeader(key);
+            if (header == null || header.value() == null) {
+                return null;
+            }
             return new String(header.value(), UTF_8);
         }
     };
