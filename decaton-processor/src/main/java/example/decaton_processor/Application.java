@@ -39,6 +39,7 @@ public class Application {
     public brave.Tracing braveTracing() {
         return brave.Tracing.newBuilder()
                 // default is B3Propagation.
+                // With W3CPropagation, a producer using OpenTelemetry can also work with brave.
                 //.propagationFactory(new W3CPropagation())
                 .build();
     }
